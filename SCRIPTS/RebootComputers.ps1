@@ -9,29 +9,35 @@
     .EXAMPLE
 #>
 Param (
+    [Parameter( Mandatory = $false, Position = 0, HelpMessage = "Initialize global settings." )]
+    [bool] $InitGlobal = $true,
+    [Parameter( Mandatory = $false, Position = 1, HelpMessage = "Initialize local settings." )]
+    [bool] $InitLocal = $true,
+    [Parameter( Mandatory = $false, Position = 2, HelpMessage = "Select computers set to reboot." )]
     [ValidateSet("Workstation", "Server", "DC", "Custom")]
-    [string] $ComputerType    
+    [string] $ComputerType        
 )
 
 
-clear-host
-$Global:ScriptName = $MyInvocation.MyCommand.Name
+$Global:ScriptInvocation = $MyInvocation
 $InitScript = "C:\DATA\Projects\GlobalSettings\SCRIPTS\Init.ps1"
-if (. "$InitScript" -MyScriptRoot (split-path $PSCommandPath -Parent) -force) { exit 1}
+. "$InitScript" -MyScriptRoot (Split-Path $PSCommandPath -Parent) -InitGlobal $InitGlobal -InitLocal $InitLocal
+if ($LastExitCode) { exit 1 }
 
 # Error trap
 trap {
-    if ($Global:Logger) {
-       Get-ErrorReporting $_
+    if (get-module -FullyQualifiedName AlexkUtils) {
+        Get-ErrorReporting $_        
         . "$GlobalSettings\$SCRIPTSFolder\Finish.ps1" 
     }
     Else {
-        Write-Host "There is error before logging initialized." -ForegroundColor Red
-    }   
+        Write-Host "[$($MyInvocation.MyCommand.path)] There is error before logging initialized. Error: $_" -ForegroundColor Red
+    }  
+    $Global:GlobalSettingsSuccessfullyLoaded = $false
     exit 1
 }
 ################################# Script start here #################################
-
+#$ComputerType = "DC"
 Function Get-DomainComputers {
     <#
     .SYNOPSIS 
@@ -54,7 +60,7 @@ Function Get-DomainComputers {
         [Parameter( Mandatory = $true, Position = 2, HelpMessage = "Distinguish name." )]
         [ValidateNotNullOrEmpty()]
         [string] $DN
-    )
+    )    
 
     [array]$output = @() 
     
@@ -70,6 +76,9 @@ Function Get-DomainComputers {
     return $output 
 }
 
+[array] $ComputersWithErrors  = @()
+[array] $ComputersWithSuccess = @()
+
 $User        = Get-VarFromAESFile $Global:GlobalKey1 $Global:APP_SCRIPT_ADMIN_Login
 $Pass        = Get-VarFromAESFile $Global:GlobalKey1 $Global:APP_SCRIPT_ADMIN_Pass
 if ($User -and $Pass){
@@ -79,10 +88,21 @@ if ($User -and $Pass){
         "CUSTOM" { 
             if ($ComputerList){
                 foreach ($Item in $ComputerList) {
-                    Restart-Computer -ComputerName $Item -Credential $Credentials -Force
-                    Add-ToLog -Message "Reboot [$Item]." -logFilePath $ScriptLogFilePath -display -status "Info" -level ($ParentLevel + 1)
-                    if ($ComputerList.Count -gt 1) {
-                        Start-Sleep $DelayAfterWSReboot
+                    $Delay = $DelayCustom
+                    if (Test-Connection -ComputerName $Item -Quiet) {
+                        $Item.DNSHostName
+                        try {
+                            Restart-Computer -ComputerName $Item -Credential $Credentials -Force
+                            Add-ToLog -Message "Rebooting [$($Item)]." -logFilePath $ScriptLogFilePath -display -status "Info" -level ($ParentLevel + 1)
+                            $ComputersWithSuccess += $Item
+                            if ($Computers.Count -gt 1) {
+                                Start-Sleep $Delay
+                            }
+                        }
+                        Catch {
+                            $ComputersWithErrors += $Item
+                            Add-ToLog -Message "Reboot [$($Item)] failed [$_]." -logFilePath $ScriptLogFilePath -display -status "Error" -level ($ParentLevel + 1)
+                        }
                     }
                 } 
             }           
@@ -90,16 +110,28 @@ if ($User -and $Pass){
         "WORKSTATION" { 
             if ($ADWSDN) {
                 [array] $Computers = @()
-                foreach ($DN in $ADWSDN){
-                    $Computers += (Get-DomainComputers -Computer $Global:DC -Credentials $Credentials -DN $DN) | Select-Object ObjectClass, DNSHostName, OperatingSystem, Description | Where-Object { $_.OperatingSystem -like "*windows*" }
+                foreach ($DN in $ADWSDN){                    
+                    $Computers += (Get-DomainComputers -Computer $Global:DC -Credentials $Credentials -DN $DN) | Select-Object ObjectClass, DNSHostName, OperatingSystem, Description, Enabled | Where-Object { ($_.OperatingSystem -like "*windows*") -and ($_.DNSHostName -NotLike "*$($env:COMPUTERNAME)*") -and ($_.Enabled -eq $true)} | Sort-Object DNSHostName
                 }
             }
-            $Computers | Format-Table -AutoSize
+            $Computers | Format-Table -AutoSize            
             foreach ($Item in $Computers) {
-                Restart-Computer -ComputerName $Item.DNSHostName -Credential $Credentials -Force
-                Add-ToLog -Message "Reboot [$($Item.DNSHostName)]." -logFilePath $ScriptLogFilePath -display -status "Info" -level ($ParentLevel + 1)
-                if ($Computers.Count -gt 1) {
-                    Start-Sleep $DelayAfterWSReboot
+                $Delay = $DelayAfterWSReboot
+                if (Test-Connection -ComputerName $Item.DNSHostName -Quiet){
+                    $Item.DNSHostName
+                    try {
+                         Restart-Computer -ComputerName $Item.DNSHostName -Credential $Credentials -Force
+                         write-host $Global:DelayAfterServerReboot
+                         Add-ToLog -Message "Rebooting [$($Item.DNSHostName)]." -logFilePath $ScriptLogFilePath -display -status "Info" -level ($ParentLevel + 1)
+                         $ComputersWithSuccess += $Item.DNSHostName
+                         if ($Computers.Count -gt 1) {
+                            Start-Sleep $Delay
+                         }
+                    }
+                    Catch {
+                         $ComputersWithErrors += $Item.DNSHostName
+                         Add-ToLog -Message "Reboot [$($Item.DNSHostName)] failed [$_]." -logFilePath $ScriptLogFilePath -display -status "Error" -level ($ParentLevel + 1)
+                    }
                 }
             }            
         }
@@ -107,37 +139,65 @@ if ($User -and $Pass){
             if ($ADServerDN) {
                 [array] $Servers   = @()
                 foreach ($DN in $ADServerDN) {
-                    $Servers += (Get-DomainComputers -Computer $Global:DC -Credentials $Credentials -DN $DN) | Select-Object ObjectClass, DNSHostName, OperatingSystem, Description | Where-Object { $_.OperatingSystem -like "*windows*" }
+                    $Servers += (Get-DomainComputers -Computer $Global:DC -Credentials $Credentials -DN $DN) | Select-Object ObjectClass, DNSHostName, OperatingSystem, Description, Enabled | Where-Object { ($_.OperatingSystem -like "*windows*") -and ($_.DNSHostName -NotLike "*$($env:COMPUTERNAME)*") -and ($_.Enabled -eq $true) } | Sort-Object DNSHostName
                 }
             }
             $Servers | Format-Table -AutoSize
             foreach ($Item in $Servers) {
-                Restart-Computer -ComputerName $Item.DNSHostName -Credential $Credentials -Force
-                Add-ToLog -Message "Reboot [$($Item.DNSHostName)]." -logFilePath $ScriptLogFilePath -display -status "Info" -level ($ParentLevel + 1)
-                if ($Servers.Count -gt 1) {
-                    Start-Sleep $DelayAfterServerReboot
-                }
+                $Delay = $DelayAfterServerReboot
+                if (Test-Connection -ComputerName $Item.DNSHostName -Quiet) {
+                    $Item.DNSHostName
+                    try {
+                        Restart-Computer -ComputerName $Item.DNSHostName -Credential $Credentials -Force
+                        Add-ToLog -Message "Rebooting [$($Item.DNSHostName)]." -logFilePath $ScriptLogFilePath -display -status "Info" -level ($ParentLevel + 1)
+                        $ComputersWithSuccess += $Item.DNSHostName
+                        if ($Computers.Count -gt 1) {
+                            Start-Sleep $Delay
+                        }
+                    }
+                    Catch {
+                        $ComputersWithErrors += $Item.DNSHostName
+                        Add-ToLog -Message "Reboot [$($Item.DNSHostName)] failed [$_]." -logFilePath $ScriptLogFilePath -display -status "Error" -level ($ParentLevel + 1)
+                    }
+                }               
             }
         }
         "DC" { 
             if ($ADDCDN) {
                 [array] $DCs       = @()
                 foreach ($DN in $ADDCDN) {
-                    $DCs += (Get-DomainComputers -Computer $Global:DC -Credentials $Credentials -DN $DN) | Select-Object ObjectClass, DNSHostName, OperatingSystem, Description | Where-Object { $_.OperatingSystem -like "*windows*" }
+                    $DCs += (Get-DomainComputers -Computer $Global:DC -Credentials $Credentials -DN $DN) | Select-Object ObjectClass, DNSHostName, OperatingSystem, Description, Enabled | Where-Object { ($_.OperatingSystem -like "*windows*") -and ($_.DNSHostName -NotLike "*$($env:COMPUTERNAME)*") -and ($_.Enabled -eq $true) } | Sort-Object DNSHostName
                 }
             }
 
             $DCs | Format-Table -AutoSize
             foreach ($Item in $DCs) {
-                Restart-Computer -ComputerName $Item.DNSHostName -Credential $Credentials -Force
-                Add-ToLog -Message "Reboot [$($Item.DNSHostName)]." -logFilePath $ScriptLogFilePath -display -status "Info" -level ($ParentLevel + 1)
-                if ($DCs.Count -gt 1) {
-                    Start-Sleep $DelayAfterDCReboot
+                $Delay = $DelayAfterDCReboot
+                if (Test-Connection -ComputerName $Item.DNSHostName -Quiet) {
+                    $Item.DNSHostName
+                    try {
+                        Restart-Computer -ComputerName $Item.DNSHostName -Credential $Credentials -Force
+                        Add-ToLog -Message "Rebooting [$($Item.DNSHostName)]." -logFilePath $ScriptLogFilePath -display -status "Info" -level ($ParentLevel + 1)
+                        $ComputersWithSuccess += $Item.DNSHostName
+                        if ($Computers.Count -gt 1) {
+                            Start-Sleep $Delay
+                        }
+                    }
+                    Catch {
+                        $ComputersWithErrors += $Item.DNSHostName
+                        Add-ToLog -Message "Reboot [$($Item.DNSHostName)] failed [$_]." -logFilePath $ScriptLogFilePath -display -status "Error" -level ($ParentLevel + 1)
+                    }
                 }
             }
         }
         Default {}
-    }     
+    }
+    
+    $ErrorCount   =  $ComputersWithErrors.Count
+    $SuccessCount =  $ComputersWithSuccess.Count
+    $TotalCount   =  $ErrorCount + $SuccessCount
+    Add-ToLog -Message "Statistic [$SuccessCount/$TotalCount], host with errors [$($ComputersWithErrors -join ", ")]." -logFilePath $ScriptLogFilePath -display -status "Info" -level ($ParentLevel + 1)
+    
 }
 
 ################################# Script end here ###################################

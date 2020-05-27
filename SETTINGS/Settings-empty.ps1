@@ -8,9 +8,10 @@
 
 
 ######################### no replacement ########################
-[int]    $Global:DelayAfterServerReboot = 5*3600  #Delay in seconds
-[int]    $Global:DelayAfterDCReboot     = 15*3600 #Delay in seconds
+[int]    $Global:DelayAfterServerReboot = 5  * 3600  #Delay in seconds
+[int]    $Global:DelayAfterDCReboot     = 15 * 3600 #Delay in seconds
 [int]    $Global:DelayAfterWSReboot     = 0       #Delay in seconds
+[int]    $Global:DelayCustom            = 0       #Delay in seconds
 
 
 [bool]  $Global:LocalSettingsSuccessfullyLoaded  = $true
