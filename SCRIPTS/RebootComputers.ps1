@@ -15,7 +15,9 @@ Param (
     [bool] $InitLocal = $true,
     [Parameter( Mandatory = $false, Position = 2, HelpMessage = "Select computers set to reboot." )]
     [ValidateSet("Workstation", "Server", "DC", "Custom")]
-    [string] $ComputerType        
+    [string] $ComputerType,
+    [Parameter( Mandatory = $false, Position = 3, HelpMessage = "Reboot only if pending." )]
+    [switch] $OnlyPendingReboot        
 )
 
 
@@ -27,7 +29,7 @@ if ($LastExitCode) { exit 1 }
 trap {
     if (get-module -FullyQualifiedName AlexkUtils) {
         Get-ErrorReporting $_        
-        . "$GlobalSettings\$SCRIPTSFolder\Finish.ps1" 
+        . "$GlobalSettingsPath\$SCRIPTSFolder\Finish.ps1" 
     }
     Else {
         Write-Host "[$($MyInvocation.MyCommand.path)] There is error before logging initialized. Error: $_" -ForegroundColor Red
@@ -75,27 +77,68 @@ Function Get-DomainComputers {
     return $output 
 }
 
+#$ComputerType = "CUSTOM"
+#$OnlyPendingReboot = $true
+
 [array] $ComputersWithErrors  = @()
 [array] $ComputersWithSuccess = @()
 
-$User        = Get-VarFromAESFile $Global:GlobalKey1 $Global:APP_SCRIPT_ADMIN_Login
-$Pass        = Get-VarFromAESFile $Global:GlobalKey1 $Global:APP_SCRIPT_ADMIN_Pass
+$User        = Get-VarFromAESFile $Global:GlobalKey1 $Global:APP_SCRIPT_ADMIN_LoginFilePath
+$Pass        = Get-VarFromAESFile $Global:GlobalKey1 $Global:APP_SCRIPT_ADMIN_PassFilePath
 if ($User -and $Pass){
     $Credentials = New-Object System.Management.Automation.PSCredential -ArgumentList (Get-VarToString $User), $Pass
-
+    $Restarted = $False
+    & ipconfig.exe /FlushDNS | Out-Null
     switch ($ComputerType.ToUpper()) {
         "CUSTOM" { 
             if ($ComputerList){
                 foreach ($Item in $ComputerList) {
                     $Delay = $DelayCustom
                     if (Test-Connection -ComputerName $Item -Quiet) {
-                        $Item.DNSHostName
-                        try {
-                            Restart-Computer -ComputerName $Item -Credential $Credentials -Force
-                            Add-ToLog -Message "Rebooting [$($Item)]." -logFilePath $ScriptLogFilePath -display -status "Info" -level ($ParentLevel + 1)
-                            $ComputersWithSuccess += $Item
-                            if ($Computers.Count -gt 1) {
-                                Start-Sleep $Delay
+                        $Item
+                        try {                           
+                            if ($OnlyPendingReboot) {
+                                $ScriptBlock = {
+                                    function Test-PendingReboot {
+                                        if (Get-ChildItem "HKLM:\Software\Microsoft\Windows\CurrentVersion\Component Based Servicing\RebootPending" -EA Ignore) { 
+                                            return $true 
+                                        }
+                                        if (Get-Item "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Auto Update\RebootRequired" -EA Ignore) { 
+                                            return $true 
+                                        }
+                                        if (Get-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager" -Name PendingFileRenameOperations -EA Ignore) { 
+                                            return $true 
+                                        }
+
+                                        try { 
+                                            $util = [wmiclass]"\\.\root\ccm\clientsdk:CCM_ClientUtilities"
+                                            $status = $util.DetermineIfRebootPending()
+                                            if ($status -and $status.RebootPending) {
+                                                return $true
+                                            }
+                                        }
+                                        catch {}
+
+                                        return $false
+                                    }
+                                    return Test-PendingReboot
+                                }
+                                $PendingReboot = Invoke-PSScriptBlock -ScriptBlock $ScriptBlock -Computer $Item -Credentials $Credentials 
+                                if ($PendingReboot){
+                                    Restart-Computer -ComputerName $Item -Credential $Credentials -Force  
+                                    $Restarted = $true                                  
+                                }
+                            }
+                            Else {
+                                Restart-Computer -ComputerName $Item -Credential $Credentials -Force
+                                $Restarted = $true                                  
+                            }
+                            if ($Restarted) {
+                                Add-ToLog -Message "Rebooting [$($Item)]." -logFilePath $ScriptLogFilePath -display -status "Info" -level ($ParentLevel + 1)
+                                $ComputersWithSuccess += $Item
+                                if ($Computers.Count -gt 1) {
+                                    Start-Sleep $Delay
+                                }
                             }
                         }
                         Catch {
@@ -119,13 +162,49 @@ if ($User -and $Pass){
                 if (Test-Connection -ComputerName $Item.DNSHostName -Quiet){
                     $Item.DNSHostName
                     try {
-                         Restart-Computer -ComputerName $Item.DNSHostName -Credential $Credentials -Force
-                         write-host $Global:DelayAfterServerReboot
-                         Add-ToLog -Message "Rebooting [$($Item.DNSHostName)]." -logFilePath $ScriptLogFilePath -display -status "Info" -level ($ParentLevel + 1)
-                         $ComputersWithSuccess += $Item.DNSHostName
-                         if ($Computers.Count -gt 1) {
-                            Start-Sleep $Delay
-                         }
+                        if ($OnlyPendingReboot) {
+                            $ScriptBlock = {
+                                function Test-PendingReboot {
+                                    if (Get-ChildItem "HKLM:\Software\Microsoft\Windows\CurrentVersion\Component Based Servicing\RebootPending" -EA Ignore) { 
+                                        return $true 
+                                    }
+                                    if (Get-Item "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Auto Update\RebootRequired" -EA Ignore) { 
+                                        return $true 
+                                    }
+                                    if (Get-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager" -Name PendingFileRenameOperations -EA Ignore) { 
+                                        return $true 
+                                    }
+
+                                    try { 
+                                        $util = [wmiclass]"\\.\root\ccm\clientsdk:CCM_ClientUtilities"
+                                        $status = $util.DetermineIfRebootPending()
+                                        if ($status -and $status.RebootPending) {
+                                            return $true
+                                        }
+                                    }
+                                    catch {}
+
+                                    return $false
+                                }
+                                return Test-PendingReboot
+                            }
+                            $PendingReboot = Invoke-PSScriptBlock -ScriptBlock $ScriptBlock -Computer $Item -Credentials $Credentials 
+                            if ($PendingReboot){
+                                Restart-Computer -ComputerName $Item.DNSHostName -Credential $Credentials -Force 
+                                $Restarted = $true                                      
+                            }
+                        }
+                        Else {
+                            Restart-Computer -ComputerName $Item.DNSHostName -Credential $Credentials -Force 
+                            $Restarted = $true                                 
+                        }
+                        if ($Restarted) {
+                            Add-ToLog -Message "Rebooting [$($Item.DNSHostName)]." -logFilePath $ScriptLogFilePath -display -status "Info" -level ($ParentLevel + 1)
+                            $ComputersWithSuccess += $Item.DNSHostName
+                            if ($Computers.Count -gt 1) {
+                                Start-Sleep $Delay
+                            }
+                        }
                     }
                     Catch {
                          $ComputersWithErrors += $Item.DNSHostName
@@ -147,11 +226,48 @@ if ($User -and $Pass){
                 if (Test-Connection -ComputerName $Item.DNSHostName -Quiet) {
                     $Item.DNSHostName
                     try {
-                        Restart-Computer -ComputerName $Item.DNSHostName -Credential $Credentials -Force
-                        Add-ToLog -Message "Rebooting [$($Item.DNSHostName)]." -logFilePath $ScriptLogFilePath -display -status "Info" -level ($ParentLevel + 1)
-                        $ComputersWithSuccess += $Item.DNSHostName
-                        if ($Computers.Count -gt 1) {
-                            Start-Sleep $Delay
+                        if ($OnlyPendingReboot) {
+                            $ScriptBlock = {
+                                function Test-PendingReboot {
+                                    if (Get-ChildItem "HKLM:\Software\Microsoft\Windows\CurrentVersion\Component Based Servicing\RebootPending" -EA Ignore) { 
+                                        return $true 
+                                    }
+                                    if (Get-Item "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Auto Update\RebootRequired" -EA Ignore) { 
+                                        return $true 
+                                    }
+                                    if (Get-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager" -Name PendingFileRenameOperations -EA Ignore) { 
+                                        return $true 
+                                    }
+
+                                    try { 
+                                        $util = [wmiclass]"\\.\root\ccm\clientsdk:CCM_ClientUtilities"
+                                        $status = $util.DetermineIfRebootPending()
+                                        if ($status -and $status.RebootPending) {
+                                            return $true
+                                        }
+                                    }
+                                    catch {}
+
+                                    return $false
+                                }
+                                return Test-PendingReboot
+                            }
+                            $PendingReboot = Invoke-PSScriptBlock -ScriptBlock $ScriptBlock -Computer $Item -Credentials $Credentials 
+                            if ($PendingReboot) {
+                                Restart-Computer -ComputerName $Item.DNSHostName -Credential $Credentials -Force  
+                                $Restarted = $true                                     
+                            }
+                        }
+                        Else {
+                            Restart-Computer -ComputerName $Item.DNSHostName -Credential $Credentials -Force   
+                            $Restarted = $true                               
+                        }
+                        if ($Restarted) {
+                            Add-ToLog -Message "Rebooting [$($Item.DNSHostName)]." -logFilePath $ScriptLogFilePath -display -status "Info" -level ($ParentLevel + 1)
+                            $ComputersWithSuccess += $Item.DNSHostName
+                            if ($Computers.Count -gt 1) {
+                                Start-Sleep $Delay
+                            }
                         }
                     }
                     Catch {
@@ -175,11 +291,48 @@ if ($User -and $Pass){
                 if (Test-Connection -ComputerName $Item.DNSHostName -Quiet) {
                     $Item.DNSHostName
                     try {
-                        Restart-Computer -ComputerName $Item.DNSHostName -Credential $Credentials -Force
-                        Add-ToLog -Message "Rebooting [$($Item.DNSHostName)]." -logFilePath $ScriptLogFilePath -display -status "Info" -level ($ParentLevel + 1)
-                        $ComputersWithSuccess += $Item.DNSHostName
-                        if ($Computers.Count -gt 1) {
-                            Start-Sleep $Delay
+                        if ($OnlyPendingReboot) {
+                            $ScriptBlock = {
+                                function Test-PendingReboot {
+                                    if (Get-ChildItem "HKLM:\Software\Microsoft\Windows\CurrentVersion\Component Based Servicing\RebootPending" -EA Ignore) { 
+                                        return $true 
+                                    }
+                                    if (Get-Item "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Auto Update\RebootRequired" -EA Ignore) { 
+                                        return $true 
+                                    }
+                                    if (Get-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager" -Name PendingFileRenameOperations -EA Ignore) { 
+                                        return $true 
+                                    }
+
+                                    try { 
+                                        $util = [wmiclass]"\\.\root\ccm\clientsdk:CCM_ClientUtilities"
+                                        $status = $util.DetermineIfRebootPending()
+                                        if ($status -and $status.RebootPending) {
+                                            return $true
+                                        }
+                                    }
+                                    catch {}
+
+                                    return $false
+                                }
+                                return Test-PendingReboot
+                            }
+                            $PendingReboot = Invoke-PSScriptBlock -ScriptBlock $ScriptBlock -Computer $Item -Credentials $Credentials 
+                            if ($PendingReboot) {
+                                Restart-Computer -ComputerName $Item.DNSHostName -Credential $Credentials -Force  
+                                $Restarted = $true                                     
+                            }
+                        }
+                        Else {
+                            Restart-Computer -ComputerName $Item.DNSHostName -Credential $Credentials -Force   
+                            $Restarted = $true                               
+                        }
+                        if ($Restarted) {
+                            Add-ToLog -Message "Rebooting [$($Item.DNSHostName)]." -logFilePath $ScriptLogFilePath -display -status "Info" -level ($ParentLevel + 1)
+                            $ComputersWithSuccess += $Item.DNSHostName
+                            if ($Computers.Count -gt 1) {
+                                Start-Sleep $Delay
+                            }
                         }
                     }
                     Catch {
@@ -192,12 +345,25 @@ if ($User -and $Pass){
         Default {}
     }
     
-    $ErrorCount   =  $ComputersWithErrors.Count
-    $SuccessCount =  $ComputersWithSuccess.Count
-    $TotalCount   =  $ErrorCount + $SuccessCount
-    Add-ToLog -Message "Statistic [$SuccessCount/$TotalCount], host with errors [$($ComputersWithErrors -join ", ")]." -logFilePath $ScriptLogFilePath -display -status "Info" -level ($ParentLevel + 1)
-    
+    if ($restarted) {
+        $ErrorCount   =  $ComputersWithErrors.Count
+        $SuccessCount =  $ComputersWithSuccess.Count
+        $TotalCount   =  $ErrorCount + $SuccessCount
+        Add-ToLog -Message "Statistic [$SuccessCount/$TotalCount], host with errors [$($ComputersWithErrors -join ", ")]." -logFilePath $ScriptLogFilePath -display -status "Info" -level ($ParentLevel + 1)
+        if ( $ErrorCount ) {
+            $Global:StateObject.Action      = "Restart"
+            $Global:StateObject.State       = "Errors while restart computers [$($ComputersWithErrors -join ", ")]. Completed successful [$($ComputersWithSuccess -join ", ")]."
+            $Global:StateObject.GlobalState = $False
+            Set-State -StateObject $Global:StateObject -StateFilePath $Global:StateFilePath -AlertType "telegram" -SaveOnChange -AlertOnChange
+        }
+        Else {
+            $Global:StateObject.Action      = "Restart"
+            $Global:StateObject.State       = "Completed restart computers [$($ComputersWithSuccess -join ", ")]."
+            $Global:StateObject.GlobalState = $False
+            Set-State -StateObject $Global:StateObject -StateFilePath $Global:StateFilePath -AlertType "telegram" -SaveOnChange -AlertOnChange
+        }
+    }
 }
 
 ################################# Script end here ###################################
-. "$GlobalSettings\$SCRIPTSFolder\Finish.ps1"
+. "$GlobalSettingsPath\$SCRIPTSFolder\Finish.ps1"

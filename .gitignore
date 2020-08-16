@@ -1,5 +1,3 @@
-ACL/Access.csv
-ACL/Owner.csv
-ACL/Roles.csv
+ACL/*
 SETTINGS/Settings.ps1
-LOGS/RebootComputers.log
+LOGS/*
