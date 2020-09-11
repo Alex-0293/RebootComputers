@@ -66,18 +66,24 @@ Function Get-DomainComputers {
     [array]$output = @() 
     
     $ScriptBlock = {`
-        Import-Module ActiveDirectory
-        [array]$output = @()  
-        $ADComputers = get-AdComputer -SearchBase $Using:DN -Filter * -Properties *
-          
-        return $ADComputers
+        $res = Import-Module ActiveDirectory -PassThru
+        
+        if ( $Res ) {
+            [array]$output = @()  
+            $ADComputers = Get-AdComputer -SearchBase $Using:DN -Filter * -Properties *
+            
+            return $ADComputers
+        }
+        Else {
+            throw "Error [$_] while loading module [ActiveDirectory]"
+        }
     } 
        
     $output = Invoke-PSScriptBlock -ScriptBlock $ScriptBlock -Computer $Computer -Credentials $Credentials -TestComputer
     return $output 
 }
 
-#$ComputerType = "CUSTOM"
+#$ComputerType = "WORKSTATION"
 #$OnlyPendingReboot = $true
 
 [array] $ComputersWithErrors  = @()
@@ -88,7 +94,7 @@ $Pass        = Get-VarFromAESFile $Global:GlobalKey1 $Global:APP_SCRIPT_ADMIN_Pa
 if ($User -and $Pass){
     $Credentials = New-Object System.Management.Automation.PSCredential -ArgumentList (Get-VarToString $User), $Pass
     $Restarted = $False
-    & ipconfig.exe /FlushDNS | Out-Null
+    & ipconfig.exe /FlushDNS
     switch ($ComputerType.ToUpper()) {
         "CUSTOM" { 
             if ($ComputerList){
@@ -100,13 +106,13 @@ if ($User -and $Pass){
                             if ($OnlyPendingReboot) {
                                 $ScriptBlock = {
                                     function Test-PendingReboot {
-                                        if (Get-ChildItem "HKLM:\Software\Microsoft\Windows\CurrentVersion\Component Based Servicing\RebootPending" -EA Ignore) { 
+                                        if (Get-ChildItem "HKLM:\Software\Microsoft\Windows\CurrentVersion\Component Based Servicing\RebootPending" -ErrorAction SilentlyContinue) { 
                                             return $true 
                                         }
-                                        if (Get-Item "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Auto Update\RebootRequired" -EA Ignore) { 
+                                        if (Get-Item "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Auto Update\RebootRequired" -ErrorAction SilentlyContinue) { 
                                             return $true 
                                         }
-                                        if (Get-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager" -Name PendingFileRenameOperations -EA Ignore) { 
+                                        if (Get-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager" -Name PendingFileRenameOperations -ErrorAction SilentlyContinue) { 
                                             return $true 
                                         }
 
@@ -165,13 +171,13 @@ if ($User -and $Pass){
                         if ($OnlyPendingReboot) {
                             $ScriptBlock = {
                                 function Test-PendingReboot {
-                                    if (Get-ChildItem "HKLM:\Software\Microsoft\Windows\CurrentVersion\Component Based Servicing\RebootPending" -EA Ignore) { 
+                                    if (Get-ChildItem "HKLM:\Software\Microsoft\Windows\CurrentVersion\Component Based Servicing\RebootPending" -ErrorAction SilentlyContinue) { 
                                         return $true 
                                     }
-                                    if (Get-Item "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Auto Update\RebootRequired" -EA Ignore) { 
+                                    if (Get-Item "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Auto Update\RebootRequired" -ErrorAction SilentlyContinue) { 
                                         return $true 
                                     }
-                                    if (Get-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager" -Name PendingFileRenameOperations -EA Ignore) { 
+                                    if (Get-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager" -Name PendingFileRenameOperations -ErrorAction SilentlyContinue) { 
                                         return $true 
                                     }
 
@@ -188,7 +194,7 @@ if ($User -and $Pass){
                                 }
                                 return Test-PendingReboot
                             }
-                            $PendingReboot = Invoke-PSScriptBlock -ScriptBlock $ScriptBlock -Computer $Item -Credentials $Credentials 
+                            $PendingReboot = Invoke-PSScriptBlock -ScriptBlock $ScriptBlock -Computer $Item.DNSHostName -Credentials $Credentials 
                             if ($PendingReboot){
                                 Restart-Computer -ComputerName $Item.DNSHostName -Credential $Credentials -Force 
                                 $Restarted = $true                                      
@@ -229,13 +235,13 @@ if ($User -and $Pass){
                         if ($OnlyPendingReboot) {
                             $ScriptBlock = {
                                 function Test-PendingReboot {
-                                    if (Get-ChildItem "HKLM:\Software\Microsoft\Windows\CurrentVersion\Component Based Servicing\RebootPending" -EA Ignore) { 
+                                    if (Get-ChildItem "HKLM:\Software\Microsoft\Windows\CurrentVersion\Component Based Servicing\RebootPending" -ErrorAction SilentlyContinue) { 
                                         return $true 
                                     }
-                                    if (Get-Item "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Auto Update\RebootRequired" -EA Ignore) { 
+                                    if (Get-Item "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Auto Update\RebootRequired" -ErrorAction SilentlyContinue) { 
                                         return $true 
                                     }
-                                    if (Get-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager" -Name PendingFileRenameOperations -EA Ignore) { 
+                                    if (Get-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager" -Name PendingFileRenameOperations -ErrorAction SilentlyContinue) { 
                                         return $true 
                                     }
 
@@ -252,7 +258,7 @@ if ($User -and $Pass){
                                 }
                                 return Test-PendingReboot
                             }
-                            $PendingReboot = Invoke-PSScriptBlock -ScriptBlock $ScriptBlock -Computer $Item -Credentials $Credentials 
+                            $PendingReboot = Invoke-PSScriptBlock -ScriptBlock $ScriptBlock -Computer $Item.DNSHostName -Credentials $Credentials 
                             if ($PendingReboot) {
                                 Restart-Computer -ComputerName $Item.DNSHostName -Credential $Credentials -Force  
                                 $Restarted = $true                                     
@@ -294,13 +300,13 @@ if ($User -and $Pass){
                         if ($OnlyPendingReboot) {
                             $ScriptBlock = {
                                 function Test-PendingReboot {
-                                    if (Get-ChildItem "HKLM:\Software\Microsoft\Windows\CurrentVersion\Component Based Servicing\RebootPending" -EA Ignore) { 
+                                    if (Get-ChildItem "HKLM:\Software\Microsoft\Windows\CurrentVersion\Component Based Servicing\RebootPending" -ErrorAction SilentlyContinue) { 
                                         return $true 
                                     }
-                                    if (Get-Item "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Auto Update\RebootRequired" -EA Ignore) { 
+                                    if (Get-Item "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Auto Update\RebootRequired" -ErrorAction SilentlyContinue) { 
                                         return $true 
                                     }
-                                    if (Get-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager" -Name PendingFileRenameOperations -EA Ignore) { 
+                                    if (Get-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager" -Name PendingFileRenameOperations -ErrorAction SilentlyContinue) { 
                                         return $true 
                                     }
 
@@ -317,7 +323,7 @@ if ($User -and $Pass){
                                 }
                                 return Test-PendingReboot
                             }
-                            $PendingReboot = Invoke-PSScriptBlock -ScriptBlock $ScriptBlock -Computer $Item -Credentials $Credentials 
+                            $PendingReboot = Invoke-PSScriptBlock -ScriptBlock $ScriptBlock -Computer $Item.DNSHostName -Credentials $Credentials 
                             if ($PendingReboot) {
                                 Restart-Computer -ComputerName $Item.DNSHostName -Credential $Credentials -Force  
                                 $Restarted = $true                                     
@@ -343,25 +349,33 @@ if ($User -and $Pass){
             }
         }
         Default {}
-    }
+    }       
     
-    if ($restarted) {
+    if ($restarted) {        
         $ErrorCount   =  $ComputersWithErrors.Count
         $SuccessCount =  $ComputersWithSuccess.Count
         $TotalCount   =  $ErrorCount + $SuccessCount
-        Add-ToLog -Message "Statistic [$SuccessCount/$TotalCount], host with errors [$($ComputersWithErrors -join ", ")]." -logFilePath $ScriptLogFilePath -display -status "Info" -level ($ParentLevel + 1)
+        Add-ToLog -Message "Restart [$ComputerType]. OnlyPendingReboot [$OnlyPendingReboot]. Statistic [$SuccessCount/$TotalCount], host with errors [$($ComputersWithErrors -join ", ")]." -logFilePath $ScriptLogFilePath -display -status "Info" -level ($ParentLevel + 1)        
         if ( $ErrorCount ) {
-            $Global:StateObject.Action      = "Restart"
+            $Global:StateObject.Data        = "Statistic [$SuccessCount/$TotalCount], host with errors [$($ComputersWithErrors -join ", ")]."
+            $Global:StateObject.Action      = "Restart [$ComputerType] opr [$OnlyPendingReboot]"
             $Global:StateObject.State       = "Errors while restart computers [$($ComputersWithErrors -join ", ")]. Completed successful [$($ComputersWithSuccess -join ", ")]."
             $Global:StateObject.GlobalState = $False
-            Set-State -StateObject $Global:StateObject -StateFilePath $Global:StateFilePath -AlertType "telegram" -SaveOnChange -AlertOnChange
+            Set-State -StateObject $Global:StateObject -StateFilePath $Global:StateFilePath -AlertType "telegram" -SaveOnChange
         }
         Else {
-            $Global:StateObject.Action      = "Restart"
+            $Global:StateObject.Action      = "Restart [$ComputerType] opr [$OnlyPendingReboot]"
             $Global:StateObject.State       = "Completed restart computers [$($ComputersWithSuccess -join ", ")]."
-            $Global:StateObject.GlobalState = $False
-            Set-State -StateObject $Global:StateObject -StateFilePath $Global:StateFilePath -AlertType "telegram" -SaveOnChange -AlertOnChange
+            $Global:StateObject.GlobalState = $true
+            Set-State -StateObject $Global:StateObject -StateFilePath $Global:StateFilePath -AlertType "telegram" -SaveOnChange
         }
+    }
+    Else {
+        Add-ToLog -Message "Restart [$ComputerType]. OnlyPendingReboot [$OnlyPendingReboot]. Statistic [0], host with errors [0]." -logFilePath $ScriptLogFilePath -display -status "Info" -level ($ParentLevel + 1)
+        $Global:StateObject.Action      = "Restart [$ComputerType] opr [$OnlyPendingReboot]"
+        $Global:StateObject.State       = "Completed restart computers [0]."
+        $Global:StateObject.GlobalState = $true
+        Set-State -StateObject $Global:StateObject -StateFilePath $Global:StateFilePath -AlertType "telegram" -SaveOnChange
     }
 }
 
