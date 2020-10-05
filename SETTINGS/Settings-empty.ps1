@@ -13,7 +13,6 @@
 [int]    $Global:DelayAfterWSReboot     = 0       #Delay in seconds
 [int]    $Global:DelayCustom            = 0       #Delay in seconds
 
-. $Global:Plugins.telegram
 
 [bool]  $Global:LocalSettingsSuccessfullyLoaded  = $true
 # Error trap

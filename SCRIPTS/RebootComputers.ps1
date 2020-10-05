@@ -1,11 +1,11 @@
 <#
     .SYNOPSIS 
         .AUTOR Alexk
-        .DATE  06.05.2020
-        .VER   1
+        DATE  06.05.2020
+        VER   1
     .DESCRIPTION
     Script to reboot remote computers.
-    .PARAMETER
+    
     .EXAMPLE
 #>
 Param (
@@ -29,12 +29,12 @@ if ($LastExitCode) { exit 1 }
 trap {
     if (get-module -FullyQualifiedName AlexkUtils) {
         Get-ErrorReporting $_        
-        . "$GlobalSettingsPath\$SCRIPTSFolder\Finish.ps1" 
+        . "$($Global:gsGlobalSettingsPath)\$($Global:gsSCRIPTSFolder)\Finish.ps1" 
     }
     Else {
         Write-Host "[$($MyInvocation.MyCommand.path)] There is error before logging initialized. Error: $_" -ForegroundColor Red
     }  
-    $Global:GlobalSettingsSuccessfullyLoaded = $false
+    $Global:gsGlobalSettingsSuccessfullyLoaded = $false
     exit 1
 }
 ################################# Script start here #################################
@@ -42,9 +42,9 @@ trap {
 Function Get-DomainComputers {
     <#
     .SYNOPSIS 
-        .AUTHOR Alexk
-        .DATE 06.05.2020
-        .VER 1   
+        AUTHOR Alexk
+        DATE 06.05.2020
+        VER 1   
     .DESCRIPTION
      Get domain computers in OU.
     .EXAMPLE
@@ -89,8 +89,8 @@ Function Get-DomainComputers {
 [array] $ComputersWithErrors  = @()
 [array] $ComputersWithSuccess = @()
 
-$User        = Get-VarFromAESFile $Global:GlobalKey1 $Global:APP_SCRIPT_ADMIN_LoginFilePath
-$Pass        = Get-VarFromAESFile $Global:GlobalKey1 $Global:APP_SCRIPT_ADMIN_PassFilePath
+$User        = Get-VarFromAESFile $Global:gsGlobalKey1 $Global:gsAPP_SCRIPT_ADMIN_LoginFilePath
+$Pass        = Get-VarFromAESFile $Global:gsGlobalKey1 $Global:gsAPP_SCRIPT_ADMIN_PassFilePath
 if ($User -and $Pass){
     $Credentials = New-Object System.Management.Automation.PSCredential -ArgumentList (Get-VarToString $User), $Pass
     $Restarted = $False
@@ -140,7 +140,7 @@ if ($User -and $Pass){
                                 $Restarted = $true                                  
                             }
                             if ($Restarted) {
-                                Add-ToLog -Message "Rebooting [$($Item)]." -logFilePath $ScriptLogFilePath -display -status "Info" -level ($ParentLevel + 1)
+                                Add-ToLog -Message "Rebooting [$($Item)]." -logFilePath $Global:gsScriptLogFilePath -display -status "Info" -level ($Global:gsParentLevel + 1)
                                 $ComputersWithSuccess += $Item
                                 if ($Computers.Count -gt 1) {
                                     Start-Sleep $Delay
@@ -149,7 +149,7 @@ if ($User -and $Pass){
                         }
                         Catch {
                             $ComputersWithErrors += $Item
-                            Add-ToLog -Message "Reboot [$($Item)] failed [$_]." -logFilePath $ScriptLogFilePath -display -status "Error" -level ($ParentLevel + 1)
+                            Add-ToLog -Message "Reboot [$($Item)] failed [$_]." -logFilePath $Global:gsScriptLogFilePath -display -status "Error" -level ($Global:gsParentLevel + 1)
                         }
                     }
                 } 
@@ -205,7 +205,7 @@ if ($User -and $Pass){
                             $Restarted = $true                                 
                         }
                         if ($Restarted) {
-                            Add-ToLog -Message "Rebooting [$($Item.DNSHostName)]." -logFilePath $ScriptLogFilePath -display -status "Info" -level ($ParentLevel + 1)
+                            Add-ToLog -Message "Rebooting [$($Item.DNSHostName)]." -logFilePath $Global:gsScriptLogFilePath -display -status "Info" -level ($Global:gsParentLevel + 1)
                             $ComputersWithSuccess += $Item.DNSHostName
                             if ($Computers.Count -gt 1) {
                                 Start-Sleep $Delay
@@ -214,7 +214,7 @@ if ($User -and $Pass){
                     }
                     Catch {
                          $ComputersWithErrors += $Item.DNSHostName
-                         Add-ToLog -Message "Reboot [$($Item.DNSHostName)] failed [$_]." -logFilePath $ScriptLogFilePath -display -status "Error" -level ($ParentLevel + 1)
+                         Add-ToLog -Message "Reboot [$($Item.DNSHostName)] failed [$_]." -logFilePath $Global:gsScriptLogFilePath -display -status "Error" -level ($Global:gsParentLevel + 1)
                     }
                 }
             }            
@@ -269,7 +269,7 @@ if ($User -and $Pass){
                             $Restarted = $true                               
                         }
                         if ($Restarted) {
-                            Add-ToLog -Message "Rebooting [$($Item.DNSHostName)]." -logFilePath $ScriptLogFilePath -display -status "Info" -level ($ParentLevel + 1)
+                            Add-ToLog -Message "Rebooting [$($Item.DNSHostName)]." -logFilePath $Global:gsScriptLogFilePath -display -status "Info" -level ($Global:gsParentLevel + 1)
                             $ComputersWithSuccess += $Item.DNSHostName
                             if ($Computers.Count -gt 1) {
                                 Start-Sleep $Delay
@@ -278,7 +278,7 @@ if ($User -and $Pass){
                     }
                     Catch {
                         $ComputersWithErrors += $Item.DNSHostName
-                        Add-ToLog -Message "Reboot [$($Item.DNSHostName)] failed [$_]." -logFilePath $ScriptLogFilePath -display -status "Error" -level ($ParentLevel + 1)
+                        Add-ToLog -Message "Reboot [$($Item.DNSHostName)] failed [$_]." -logFilePath $Global:gsScriptLogFilePath -display -status "Error" -level ($Global:gsParentLevel + 1)
                     }
                 }               
             }
@@ -334,7 +334,7 @@ if ($User -and $Pass){
                             $Restarted = $true                               
                         }
                         if ($Restarted) {
-                            Add-ToLog -Message "Rebooting [$($Item.DNSHostName)]." -logFilePath $ScriptLogFilePath -display -status "Info" -level ($ParentLevel + 1)
+                            Add-ToLog -Message "Rebooting [$($Item.DNSHostName)]." -logFilePath $Global:gsScriptLogFilePath -display -status "Info" -level ($Global:gsParentLevel + 1)
                             $ComputersWithSuccess += $Item.DNSHostName
                             if ($Computers.Count -gt 1) {
                                 Start-Sleep $Delay
@@ -343,7 +343,7 @@ if ($User -and $Pass){
                     }
                     Catch {
                         $ComputersWithErrors += $Item.DNSHostName
-                        Add-ToLog -Message "Reboot [$($Item.DNSHostName)] failed [$_]." -logFilePath $ScriptLogFilePath -display -status "Error" -level ($ParentLevel + 1)
+                        Add-ToLog -Message "Reboot [$($Item.DNSHostName)] failed [$_]." -logFilePath $Global:gsScriptLogFilePath -display -status "Error" -level ($Global:gsParentLevel + 1)
                     }
                 }
             }
@@ -355,29 +355,29 @@ if ($User -and $Pass){
         $ErrorCount   =  $ComputersWithErrors.Count
         $SuccessCount =  $ComputersWithSuccess.Count
         $TotalCount   =  $ErrorCount + $SuccessCount
-        Add-ToLog -Message "Restart [$ComputerType]. OnlyPendingReboot [$OnlyPendingReboot]. Statistic [$SuccessCount/$TotalCount], host with errors [$($ComputersWithErrors -join ", ")]." -logFilePath $ScriptLogFilePath -display -status "Info" -level ($ParentLevel + 1)        
+        Add-ToLog -Message "Restart [$ComputerType]. OnlyPendingReboot [$OnlyPendingReboot]. Statistic [$SuccessCount/$TotalCount], host with errors [$($ComputersWithErrors -join ", ")]." -logFilePath $Global:gsScriptLogFilePath -display -status "Info" -level ($Global:gsParentLevel + 1)        
         if ( $ErrorCount ) {
-            $Global:StateObject.Data        = "Statistic [$SuccessCount/$TotalCount], host with errors [$($ComputersWithErrors -join ", ")]."
-            $Global:StateObject.Action      = "Restart [$ComputerType] opr [$OnlyPendingReboot]"
-            $Global:StateObject.State       = "Errors while restart computers [$($ComputersWithErrors -join ", ")]. Completed successful [$($ComputersWithSuccess -join ", ")]."
-            $Global:StateObject.GlobalState = $False
-            Set-State -StateObject $Global:StateObject -StateFilePath $Global:StateFilePath -AlertType "telegram" -SaveOnChange
+            $Global:gsStateObject.Data        = "Statistic [$SuccessCount/$TotalCount], host with errors [$($ComputersWithErrors -join ", ")]."
+            $Global:gsStateObject.Action      = "Restart [$ComputerType] opr [$OnlyPendingReboot]"
+            $Global:gsStateObject.State       = "Errors while restart computers [$($ComputersWithErrors -join ", ")]. Completed successful [$($ComputersWithSuccess -join ", ")]."
+            $Global:gsStateObject.GlobalState = $False
+            Set-State -StateObject $Global:gsStateObject -StateFilePath $Global:gsStateFilePath -AlertType "telegram" -SaveOnChange
         }
         Else {
-            $Global:StateObject.Action      = "Restart [$ComputerType] opr [$OnlyPendingReboot]"
-            $Global:StateObject.State       = "Completed restart computers [$($ComputersWithSuccess -join ", ")]."
-            $Global:StateObject.GlobalState = $true
-            Set-State -StateObject $Global:StateObject -StateFilePath $Global:StateFilePath -AlertType "telegram" -SaveOnChange
+            $Global:gsStateObject.Action      = "Restart [$ComputerType] opr [$OnlyPendingReboot]"
+            $Global:gsStateObject.State       = "Completed restart computers [$($ComputersWithSuccess -join ", ")]."
+            $Global:gsStateObject.GlobalState = $true
+            Set-State -StateObject $Global:gsStateObject -StateFilePath $Global:gsStateFilePath -AlertType "telegram" -SaveOnChange
         }
     }
     Else {
-        Add-ToLog -Message "Restart [$ComputerType]. OnlyPendingReboot [$OnlyPendingReboot]. Statistic [0], host with errors [0]." -logFilePath $ScriptLogFilePath -display -status "Info" -level ($ParentLevel + 1)
-        $Global:StateObject.Action      = "Restart [$ComputerType] opr [$OnlyPendingReboot]"
-        $Global:StateObject.State       = "Completed restart computers [0]."
-        $Global:StateObject.GlobalState = $true
-        Set-State -StateObject $Global:StateObject -StateFilePath $Global:StateFilePath -AlertType "telegram" -SaveOnChange
+        Add-ToLog -Message "Restart [$ComputerType]. OnlyPendingReboot [$OnlyPendingReboot]. Statistic [0], host with errors [0]." -logFilePath $Global:gsScriptLogFilePath -display -status "Info" -level ($Global:gsParentLevel + 1)
+        $Global:gsStateObject.Action      = "Restart [$ComputerType] opr [$OnlyPendingReboot]"
+        $Global:gsStateObject.State       = "Completed restart computers [0]."
+        $Global:gsStateObject.GlobalState = $true
+        Set-State -StateObject $Global:gsStateObject -StateFilePath $Global:gsStateFilePath -AlertType "telegram" -SaveOnChange
     }
 }
 
 ################################# Script end here ###################################
-. "$GlobalSettingsPath\$SCRIPTSFolder\Finish.ps1"
+. "$($Global:gsGlobalSettingsPath)\$($Global:gsSCRIPTSFolder)\Finish.ps1"
