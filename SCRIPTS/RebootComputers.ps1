@@ -1,6 +1,6 @@
 <#
     .SYNOPSIS 
-        .AUTOR Alexk
+        AUTHOR Alexk
         DATE  06.05.2020
         VER   1
     .DESCRIPTION
